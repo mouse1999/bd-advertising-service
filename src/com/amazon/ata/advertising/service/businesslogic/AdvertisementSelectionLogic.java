@@ -4,14 +4,19 @@ import com.amazon.ata.advertising.service.dao.ReadableDao;
 import com.amazon.ata.advertising.service.model.AdvertisementContent;
 import com.amazon.ata.advertising.service.model.EmptyGeneratedAdvertisement;
 import com.amazon.ata.advertising.service.model.GeneratedAdvertisement;
+import com.amazon.ata.advertising.service.model.RequestContext;
+import com.amazon.ata.advertising.service.targeting.TargetingEvaluator;
 import com.amazon.ata.advertising.service.targeting.TargetingGroup;
 
+import com.amazon.ata.advertising.service.targeting.predicate.TargetingPredicateResult;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.inject.Inject;
 
 /**
@@ -25,6 +30,7 @@ public class AdvertisementSelectionLogic {
     private final ReadableDao<String, List<TargetingGroup>> targetingGroupDao;
     private Random random = new Random();
 
+
     /**
      * Constructor for AdvertisementSelectionLogic.
      * @param contentDao Source of advertising content.
@@ -35,6 +41,7 @@ public class AdvertisementSelectionLogic {
                                        ReadableDao<String, List<TargetingGroup>> targetingGroupDao) {
         this.contentDao = contentDao;
         this.targetingGroupDao = targetingGroupDao;
+
     }
 
     /**
@@ -56,19 +63,47 @@ public class AdvertisementSelectionLogic {
      *     not be generated.
      */
     public GeneratedAdvertisement selectAdvertisement(String customerId, String marketplaceId) {
-        GeneratedAdvertisement generatedAdvertisement = new EmptyGeneratedAdvertisement();
-        if (StringUtils.isEmpty(marketplaceId)) {
-            LOG.warn("MarketplaceId cannot be null or empty. Returning empty ad.");
-        } else {
-            final List<AdvertisementContent> contents = contentDao.get(marketplaceId);
 
-            if (CollectionUtils.isNotEmpty(contents)) {
-                AdvertisementContent randomAdvertisementContent = contents.get(random.nextInt(contents.size()));
-                generatedAdvertisement = new GeneratedAdvertisement(randomAdvertisementContent);
-            }
+        TargetingEvaluator targetingEvaluator = new TargetingEvaluator(new RequestContext(customerId, marketplaceId));
+         final List<AdvertisementContent> contents = contentDao.get(marketplaceId);
 
+
+        if (CollectionUtils.isEmpty(contents)) {
+            LOG.info("No advertisements available for marketplaceId: " + marketplaceId);
+            return new EmptyGeneratedAdvertisement();
         }
 
-        return generatedAdvertisement;
+
+        final List<AdvertisementContent> eligibleAds = contents.stream()
+                .flatMap(content -> Optional.ofNullable(content)
+                        .map(c -> {
+
+                            List<TargetingGroup> targetingGroups = Optional.ofNullable(targetingGroupDao.get(c.getContentId()))
+                                    .orElse(Collections.emptyList());
+
+
+                            targetingGroups.sort(Comparator.comparingDouble(TargetingGroup::getClickThroughRate).reversed());
+
+                            return targetingGroups.stream()
+                                    .filter(Objects::nonNull)
+                                    .filter(targetingGroup -> Optional.ofNullable(targetingEvaluator.evaluate(targetingGroup))
+                                            .map(TargetingPredicateResult::isTrue)
+                                            .orElse(false))
+                                    .map(targetingGroup -> c);
+                        })
+                        .orElseGet(Stream::empty))
+                .distinct()
+                .collect(Collectors.toList());
+
+
+
+        if (eligibleAds.isEmpty()) {
+            LOG.info("No eligible advertisements found for customerId: " + customerId + ", marketplaceId: " + marketplaceId);
+            return new EmptyGeneratedAdvertisement();
+        }
+
+        AdvertisementContent randomAd = eligibleAds.get(random.nextInt(eligibleAds.size()));
+
+        return new GeneratedAdvertisement(randomAd);
     }
 }
