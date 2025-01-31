@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.inject.Inject;
 
+import static java.util.Arrays.stream;
+
 /**
  * This class is responsible for picking the advertisement to be rendered.
  */
@@ -80,11 +82,10 @@ public class AdvertisementSelectionLogic {
 
                             List<TargetingGroup> targetingGroups = Optional.ofNullable(targetingGroupDao.get(c.getContentId()))
                                     .orElse(Collections.emptyList());
-
-
-                            targetingGroups.sort(Comparator.comparingDouble(TargetingGroup::getClickThroughRate).reversed());
+                            //i'm sorting using stream so as not to modify the list directly
 
                             return targetingGroups.stream()
+                                    .sorted(Comparator.comparingDouble(TargetingGroup::getClickThroughRate).reversed())
                                     .filter(Objects::nonNull)
                                     .filter(targetingGroup -> Optional.ofNullable(targetingEvaluator.evaluate(targetingGroup))
                                             .map(TargetingPredicateResult::isTrue)
