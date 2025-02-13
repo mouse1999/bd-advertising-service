@@ -6,14 +6,19 @@ import com.amazon.ata.advertising.service.targeting.predicate.TargetingPredicate
 
 import javax.inject.Inject;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
  * Evaluates TargetingPredicates for a given RequestContext.
  */
 public class TargetingEvaluator {
     public static final boolean IMPLEMENTED_STREAMS = true;
-    public static final boolean IMPLEMENTED_CONCURRENCY = false;
+    public static final boolean IMPLEMENTED_CONCURRENCY = true;
     private final RequestContext requestContext;
+    private final ExecutorService executorService;
 
     /**
      * Creates an evaluator for targeting predicates.
@@ -22,6 +27,7 @@ public class TargetingEvaluator {
     @Inject
     public TargetingEvaluator(RequestContext requestContext) {
         this.requestContext = requestContext;
+        this.executorService = Executors.newCachedThreadPool();
     }
 
     /**
@@ -31,8 +37,21 @@ public class TargetingEvaluator {
      * @return TRUE if all of the TargetingPredicates evaluate to TRUE against the RequestContext, FALSE otherwise.
      */
     public TargetingPredicateResult evaluate(TargetingGroup targetingGroup) {
+
         boolean allTruePredicates = targetingGroup.getTargetingPredicates().stream()
-                .allMatch(predicate -> predicate.evaluate(requestContext).isTrue());
+                .map(targetingPredicate -> executorService.submit(()->
+                    targetingPredicate.evaluate(requestContext).isTrue()
+                ))
+                .collect(Collectors.toList()).stream()
+                .allMatch(booleanFuture -> {
+                    try {
+                        return booleanFuture.get();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    } catch (ExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
 
         return allTruePredicates ? TargetingPredicateResult.TRUE : TargetingPredicateResult.FALSE;
 
