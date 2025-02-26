@@ -30,6 +30,7 @@ public class AdvertisementSelectionLogic {
 
     private final ReadableDao<String, List<AdvertisementContent>> contentDao;
     private final ReadableDao<String, List<TargetingGroup>> targetingGroupDao;
+    private final  TreeMap<Double, AdvertisementContent> sortedMap = new TreeMap<>(Comparator.reverseOrder());
     private Random random = new Random();
 
 
@@ -90,7 +91,10 @@ public class AdvertisementSelectionLogic {
                                     .filter(targetingGroup -> Optional.ofNullable(targetingEvaluator.evaluate(targetingGroup))
                                             .map(TargetingPredicateResult::isTrue)
                                             .orElse(false))
-                                    .map(targetingGroup -> c);
+                                    .map(targetingGroup -> {
+                                        sortedMap.put(targetingGroup.getClickThroughRate(), c);
+                                        return c;
+                                    });
                         })
                         .orElseGet(Stream::empty))
                 .distinct()
@@ -103,7 +107,10 @@ public class AdvertisementSelectionLogic {
             return new EmptyGeneratedAdvertisement();
         }
 
-        AdvertisementContent randomAd = eligibleAds.get(random.nextInt(eligibleAds.size()));
+        Map.Entry<Double, AdvertisementContent> firstEntryMap = sortedMap.firstEntry();
+
+        //AdvertisementContent randomAd = eligibleAds.get(random.nextInt(eligibleAds.size()));
+        AdvertisementContent randomAd = firstEntryMap.getValue();
 
         return new GeneratedAdvertisement(randomAd);
     }
