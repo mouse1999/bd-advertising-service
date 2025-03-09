@@ -86,7 +86,7 @@ public class AdvertisementSelectionLogic {
                             //i'm sorting using stream so as not to modify the list directly
 
                             return targetingGroups.stream()
-                                    .sorted(Comparator.comparingDouble(TargetingGroup::getClickThroughRate).reversed())
+                                    //.sorted(Comparator.comparingDouble(TargetingGroup::getClickThroughRate).reversed())
                                     .filter(Objects::nonNull)
                                     .filter(targetingGroup -> Optional.ofNullable(targetingEvaluator.evaluate(targetingGroup))
                                             .map(TargetingPredicateResult::isTrue)
